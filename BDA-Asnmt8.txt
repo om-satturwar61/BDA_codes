@@ -1,0 +1,102 @@
+import java.io.IOException;
+import java.util.StringTokenizer;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class MatrixMultiplication {
+
+    public static class MatrixMapper extends Mapper<Object, Text, Text, Text> {
+
+        private Text outKey = new Text();
+        private Text outValue = new Text();
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            int matrixSize = Integer.parseInt(conf.get("matrixSize"));
+
+            String[] tokens = value.toString().split(",");
+            String matrixName = tokens[0];
+            int i = Integer.parseInt(tokens[1]);
+            int j = Integer.parseInt(tokens[2]);
+            int val = Integer.parseInt(tokens[3]);
+
+            if (matrixName.equals("A")) {
+                for (int k = 0; k < matrixSize; k++) {
+                    outKey.set(i + "," + k);
+                    outValue.set(matrixName + "," + j + "," + val);
+                    context.write(outKey, outValue);
+                }
+            } else if (matrixName.equals("B")) {
+                for (int k = 0; k < matrixSize; k++) {
+                    outKey.set(k + "," + j);
+                    outValue.set(matrixName + "," + i + "," + val);
+                    context.write(outKey, outValue);
+                }
+            }
+        }
+    }
+
+    public static class MatrixReducer extends Reducer<Text, Text, Text, IntWritable> {
+
+        public void reduce(Text key, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+            int result = 0;
+            int[] aValues = new int[2];
+            int[] bValues = new int[2];
+
+            for (Text value : values) {
+                String[] tokens = value.toString().split(",");
+                String matrixName = tokens[0];
+                int index = Integer.parseInt(tokens[1]);
+                int val = Integer.parseInt(tokens[2]);
+
+                if (matrixName.equals("A")) {
+                    aValues[index] = val;
+                } else if (matrixName.equals("B")) {
+                    bValues[index] = val;
+                }
+            }
+
+            result = aValues[1] * bValues[1];
+
+            context.write(key, new IntWritable(result));
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        conf.set("matrixSize", args[2]); // Set the matrix size
+
+        Job job = Job.getInstance(conf, "Matrix Multiplication");
+        job.setJarByClass(MatrixMultiplication.class);
+        job.setMapperClass(MatrixMapper.class);
+        job.setReducerClass(MatrixReducer.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+
+
+javac -classpath $HADOOP_HOME/share/hadoop/common/hadoop-common-
+
+
+hdfs dfs -mkdir input
+hdfs dfs -put matrixA.txt input
+hdfs dfs -put matrixB.txt input
+
+
+hadoop jar MatrixMultiplication.jar MatrixMultiplication input output 3
